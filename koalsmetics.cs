@@ -16,10 +16,11 @@ using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using Jotunn.Utils;
 using R3DCore.Menu;
-using UnityEngine.Rendering;
+using UnityEngine.UI;
 
 namespace KWC
 {
+    [BepInDependency("com.Root.Menu", BepInDependency.DependencyFlags.HardDependency)]
     [BepInPlugin(ModId, ModName, Version)]
     [BepInProcess("ROUNDS 3D.exe")]
     [HarmonyPatch]
@@ -27,10 +28,22 @@ namespace KWC
     {
         private const string ModId = "koala.wonderous.cosmetics";
         private const string ModName = "KWC";
-        public const string Version = "0.0.1";
-        public static GameObject[] eyes;
-        public static GameObject[] mouths;
+        public const string Version = "1.0.0";
 
+        public static List<GameObject> eyes = new List<GameObject>();
+        public static List<GameObject> mouths = new List<GameObject>();
+        public AssetBundle eyebun;
+        public AssetBundle mouthbun;
+        public AssetBundle menubun;
+
+        private Slider eyeSlide;
+        private Slider mouthSlide;
+        private Toggle box;
+
+        public static bool setup = false;
+
+        public int[] cosmeticIds = new[] { 25, 18, 0, 0};
+        public bool cosmeticBox = false;
         public static KWC instance { get; private set; }
         public static Mesh squareMesh = new Mesh();
         public static Color[] skinColors = new[] {
@@ -114,165 +127,172 @@ namespace KWC
         private void Awake()
         {
             instance = this;
+            instance.cosmeticIds = new[] { (int)PlayerPrefs.GetFloat("PlayerEye", 25), (int)PlayerPrefs.GetFloat("PlayerMouth", 18), 0, 0 };
+            var box2 = false;
+            if (PlayerPrefs.GetInt("PlayerBox", 0) == 1) box2 = true;
+            instance.cosmeticBox = box2;
             new Harmony(ModId).PatchAll();
+            eyebun = AssetUtils.LoadAssetBundleFromResources("eyes", typeof(KWC).Assembly);
+            mouthbun = AssetUtils.LoadAssetBundleFromResources("mouths", typeof(KWC).Assembly);
+            menubun = AssetUtils.LoadAssetBundleFromResources("menu", typeof(KWC).Assembly);
+            eyes.Add(new GameObject());
+            mouths.Add(new GameObject());
+            var menuObj = menubun.LoadAsset<GameObject>("KosmeticsMenu");
+            MenuHandler.ResgesterMenu(menuObj.GetComponent<Canvas>(), MenuHandler.MenuType.Mod, null);
+            foreach (var obj in eyebun.LoadAllAssets<GameObject>())
+            {
+                eyes.Add(obj);
+            }
+            foreach (var obj in mouthbun.LoadAllAssets<GameObject>())
+            {
+                mouths.Add(obj);
+            }
             GenerateSquare();
         }
-        /**
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(Connection), "OnJoinedRoom")]
-        public static void PatchOnJoinedRoom()
+        private void FixedUpdate()
         {
-            foreach (var v in FindObjectsOfType<PhotonView>().Where((pv) => pv.gameObject.GetComponent<Player>()).ToArray())
+            if (MenuHandler.instance.ActiveMenu == 4)
             {
-                var ___player = v.GetComponent<Player>();
-                var kd = ___player.transform.GetComponent<KosmeticData>();
-                int index = ___player.refs.view.ControllerActorNr - 1 % 32;
-                bool isBox = false;
-                switch (___player.refs.view.Controller.NickName)
+                eyeSlide = GameObject.Find("KosmeticsMenu").transform.Find("Eyes").gameObject.GetComponent<Slider>();
+                mouthSlide = GameObject.Find("KosmeticsMenu").transform.Find("Mouths").gameObject.GetComponent<Slider>();
+                box = GameObject.Find("KosmeticsMenu").transform.Find("BoxMode").gameObject.GetComponent<Toggle>();
+                if (!setup)
                 {
-                    case "AncientKoala": index = 6; isBox = true; break;
-                    case "Anarkey": index = 31; isBox = true; break;
+                    eyeSlide.value = PlayerPrefs.GetFloat("PlayerEye", 25);
+                    mouthSlide.value = PlayerPrefs.GetFloat("PlayerMouth", 18);
+                    var box2 = false;
+                    if (PlayerPrefs.GetInt("PlayerBox", 0) == 1) box2 = true;
+                    box.isOn = box2;
+                    setup = true;
                 }
-                if (isBox)
+                else
                 {
-                    var cm = ___player.transform.Find("Collider_Map");
-                    cm.GetComponent<MeshFilter>().mesh = squareMesh;
-                    var ch = ___player.transform.Find("Collider_Hitbox");
-                    ch.GetComponent<MeshFilter>().mesh = squareMesh;
-                    if (!ch.GetComponent<BoxCollider>())
-                    {
-                        ch.gameObject.AddComponent<BoxCollider>().material = ch.GetComponent<SphereCollider>().material;
-                        Destroy(ch.GetComponent<SphereCollider>());
-                    }
+                    PlayerPrefs.SetFloat("PlayerEye", eyeSlide.value);
+                    PlayerPrefs.SetFloat("PlayerMouth", mouthSlide.value);
+                    var box2 = 0;
+                    if (box.isOn == true) box2 = 1;
+                    PlayerPrefs.SetInt("PlayerBox", box2);
+                    instance.cosmeticIds[0] = (int)eyeSlide.value;
+                    instance.cosmeticIds[1] = (int)mouthSlide.value;
+                    instance.cosmeticBox = box.isOn;
                 }
-                var col = skinColors[index];
-                col.r *= 1.25f;
-                col.g *= 1.25f;
-                col.b *= 1.25f;
-                var colObj = ___player.transform.Find("Collider_Hitbox");
-                var meshRen = colObj.GetComponent<MeshRenderer>();
-                var mat = meshRen.material;
-                var newMat = new Material(mat);
-                newMat.name = "koalaschangedcolor";
-                newMat.color = col;
-                meshRen.material = newMat;
-                foreach (var ren in ___player.transform.Find("Limbs").GetComponentsInChildren<MeshRenderer>())
-                {
-                    ren.material = newMat;
-                }
-                ___player.transform.Find("Collider_Map").GetComponent<MeshRenderer>().material = newMat;
+                
+            if (box.isOn == true)
+            {
+                GameObject.Find("KosmeticsMenu").transform.Find("Player").GetChild(1).gameObject.SetActive(true);
+            }
+            else
+            {
+                GameObject.Find("KosmeticsMenu").transform.Find("Player").GetChild(1).gameObject.SetActive(false);
+            }
+            var e = GameObject.Find("KosmeticsMenu").transform.Find("Player").Find("EyeObj");
+            for (var i = 0; i < e.childCount; i++)
+            {
+                Destroy(e.GetChild(i).gameObject);
+            }
+            Instantiate(eyes[(int)eyeSlide.value], e);
+            var m = GameObject.Find("KosmeticsMenu").transform.Find("Player").Find("MouthObj");
+            for (var i = 0; i < m.childCount; i++)
+            {
+                Destroy(m.GetChild(i).gameObject);
+            }
+            Instantiate(mouths[(int)mouthSlide.value], m);
+            } else
+            {
+                setup = false;
             }
         }
         [HarmonyPostfix]
         [HarmonyPatch(typeof(Connection), "OnPlayerEnteredRoom")]
         public static void PatchOnPlayerEntered()
         {
-            foreach (var v in FindObjectsOfType<PhotonView>().Where((pv) => pv.gameObject.GetComponent<Player>()).ToArray())
+            foreach (var p in FindObjectsOfType<Player>())
             {
-                var ___player = v.GetComponent<Player>();
-                var kd = ___player.transform.GetComponent<KosmeticData>();
-                int index = ___player.refs.view.ControllerActorNr - 1 % 32;
-                bool isBox = false;
-                switch (___player.refs.view.Controller.NickName)
-                {
-                    case "AncientKoala": index = 6; isBox = true; break;
-                    case "Anarkey": index = 31; isBox = true; break;
-                }
-                if (isBox)
-                {
-                    var cm = ___player.transform.Find("Collider_Map");
-                    cm.GetComponent<MeshFilter>().mesh = squareMesh;
-                    var ch = ___player.transform.Find("Collider_Hitbox");
-                    ch.GetComponent<MeshFilter>().mesh = squareMesh;
-                    if (!ch.GetComponent<BoxCollider>())
-                    {
-                        ch.gameObject.AddComponent<BoxCollider>().material = ch.GetComponent<SphereCollider>().material;
-                        Destroy(ch.GetComponent<SphereCollider>());
-                    }
-                }
-                var col = skinColors[index];
-                col.r *= 1.25f;
-                col.g *= 1.25f;
-                col.b *= 1.25f;
-                var colObj = ___player.transform.Find("Collider_Hitbox");
-                var meshRen = colObj.GetComponent<MeshRenderer>();
-                var mat = meshRen.material;
-                var newMat = new Material(mat);
-                newMat.name = "koalaschangedcolor";
-                newMat.color = col;
-                meshRen.material = newMat;
-                foreach (var ren in ___player.transform.Find("Limbs").GetComponentsInChildren<MeshRenderer>())
-                {
-                    ren.material = newMat;
-                }
-                ___player.transform.Find("Collider_Map").GetComponent<MeshRenderer>().material = newMat;
+                if(p.gameObject.GetComponent<KosmeticData>() == null)
+                p.gameObject.AddComponent<KosmeticData>();
             }
-        }**/
-        [HarmonyPrefix]
-        [HarmonyPatch(typeof(Player), "Start")]
-        public static void PatchAwake(Player __instance)
-        {
-            var a = __instance.gameObject.AddComponent<KosmeticData>();
+            var __instance = FindObjectsOfType<Player>().Where((p) => p.gameObject.GetComponent<PhotonView>().IsMine && PhotonNetwork.IsMasterClient).ToArray()[0];
+            __instance.gameObject.GetComponent<PhotonView>().RPC("RPCBoomer", RpcTarget.All);
         }
         [HarmonyPostfix]
-        [HarmonyPatch(typeof(Player), "Start")]
-        public static void PatchStart2(Player __instance)
+        [HarmonyPatch(typeof(Player), "Awake")]
+        public static void PatchStart(Player __instance)
         {
-            foreach (var v in FindObjectsOfType<PhotonView>().Where((pv) => pv.gameObject.GetComponent<Player>()).ToArray())
+            __instance.gameObject.AddComponent<KosmeticData>();
+            var kd = __instance.gameObject.GetComponent<KosmeticData>();
+            try
             {
-                var ___player = v.GetComponent<Player>();
-                var kd = ___player.transform.GetComponent<KosmeticData>();
-                int index = ___player.refs.view.ControllerActorNr - 1 % 32;
-                bool isBox = false;
-                switch (___player.refs.view.Controller.NickName)
+                foreach (var v in FindObjectsOfType<PhotonView>().Where((pv) => pv.gameObject.GetComponent<Player>()).ToArray())
                 {
-                    case "AncientKoala": index = 6; isBox = true; break;
-                    case "Anarkey": index = 31; isBox = true; break;
-                }
-                if (isBox)
-                {
-                    var cm = ___player.transform.Find("Collider_Map");
-                    cm.GetComponent<MeshFilter>().mesh = squareMesh;
-                    var ch = ___player.transform.Find("Collider_Hitbox");
-                    ch.GetComponent<MeshFilter>().mesh = squareMesh;
-                    if (!ch.GetComponent<BoxCollider>())
+                    var ___player = v.GetComponent<Player>();
+                    int index = ___player.refs.view.ControllerActorNr - 1 % 32;
+                    switch (___player.refs.view.Controller.NickName)
                     {
-                        ch.gameObject.AddComponent<BoxCollider>().material = ch.GetComponent<SphereCollider>().material;
-                        Destroy(ch.GetComponent<SphereCollider>());
+                        case "AncientKoala": index = 6; break;
+                        case "Anarkey": index = 31; break;
                     }
+                    var col = skinColors[index];
+                    col.r *= 1.25f;
+                    col.g *= 1.25f;
+                    col.b *= 1.25f;
+                    var colObj = ___player.transform.Find("Collider_Hitbox");
+                    var meshRen = colObj.GetComponent<MeshRenderer>();
+                    var mat = meshRen.material;
+                    var newMat = new Material(mat);
+                    newMat.name = "koalaschangedcolor";
+                    newMat.color = col;
+                    meshRen.material = newMat;
+                    foreach (var ren in ___player.transform.Find("Limbs").GetComponentsInChildren<MeshRenderer>())
+                    {
+                        ren.material = newMat;
+                    }
+                    ___player.transform.Find("Collider_Map").GetComponent<MeshRenderer>().material = newMat;
                 }
-                var col = skinColors[index];
-                col.r *= 1.25f;
-                col.g *= 1.25f;
-                col.b *= 1.25f;
-                var colObj = ___player.transform.Find("Collider_Hitbox");
-                var meshRen = colObj.GetComponent<MeshRenderer>();
-                var mat = meshRen.material;
-                var newMat = new Material(mat);
-                newMat.name = "koalaschangedcolor";
-                newMat.color = col;
-                meshRen.material = newMat;
-                foreach (var ren in ___player.transform.Find("Limbs").GetComponentsInChildren<MeshRenderer>())
-                {
-                    ren.material = newMat;
-                }
-                ___player.transform.Find("Collider_Map").GetComponent<MeshRenderer>().material = newMat;
-            }
+            } catch { }
         }
     }
 
-    public class KosmeticData : MonoBehaviour
+    public class KosmeticData : MonoBehaviourPunCallbacks
     {
-        public int colorID = -1;
-        public int preferedID;
-        public int[] cosmeticIDS = new int[] { 0, 0, 0, 0 };
-        public bool isBox = false;
-
         [PunRPC]
-        public static void RPCPushFaceData(int actorId, int[] cosIds, bool boxin)
+        public void RPCBoomer()
         {
-            FindObjectsOfType<PhotonView>().Where((p) => p.ControllerActorNr == actorId).ToArray()[0].gameObject.GetComponent<KosmeticData>().cosmeticIDS = cosIds;
-            FindObjectsOfType<PhotonView>().Where((p) => p.ControllerActorNr == actorId).ToArray()[0].gameObject.GetComponent<KosmeticData>().isBox = boxin;
+            var player = FindObjectsOfType<Player>().Where((p) => p.gameObject.GetComponent<PhotonView>().IsMine).ToArray()[0];
+            var view = player.gameObject.GetComponent<PhotonView>();
+            print(KWC.instance.cosmeticIds[0]);
+            view.RPC("RPCRang", RpcTarget.All, new object[] { view.ControllerActorNr, KWC.instance.cosmeticIds, KWC.instance.cosmeticBox });
+        }
+        [PunRPC]
+        public void RPCRang(int actorNr, int[] cosIds, bool box)
+        {
+            var targ = FindObjectsOfType<PhotonView>().Where((v) => v.ControllerActorNr == actorNr && v.gameObject.GetComponent<Player>()).ToArray()[0];
+            var f = targ.transform.GetChild(3);
+            var wasActive = f.gameObject.activeSelf;
+            f.gameObject.SetActive(true);
+            for (var i = 0; i < f.childCount; i++)
+            {
+                try
+                {
+                    Destroy(f.GetChild(i).gameObject);
+                } catch { }
+            }
+            print(cosIds[0]);
+            print(cosIds[1]);
+            Instantiate(KWC.eyes[cosIds[0]], f);
+            Instantiate(KWC.mouths[cosIds[1]], f);
+            f.gameObject.SetActive(wasActive);
+            if (box == true)
+            {
+                var cm = targ.transform.Find("Collider_Map");
+                cm.GetComponent<MeshFilter>().mesh = KWC.squareMesh;
+                var ch = targ.transform.Find("Collider_Hitbox");
+                ch.GetComponent<MeshFilter>().mesh = KWC.squareMesh;
+                if (!ch.GetComponent<BoxCollider>())
+                {
+                    ch.gameObject.AddComponent<BoxCollider>().material = ch.GetComponent<SphereCollider>().material;
+                    Destroy(ch.GetComponent<SphereCollider>());
+                }
+            }
         }
     }
 }
